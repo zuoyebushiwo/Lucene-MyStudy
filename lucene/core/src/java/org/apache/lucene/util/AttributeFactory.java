@@ -51,15 +51,46 @@ public abstract class AttributeFactory {
    * class name of the supplied {@link Attribute} interface class by appending <code>Impl</code> to it.
    */
   public static final AttributeFactory DEFAULT_ATTRIBUTE_FACTORY = new DefaultAttributeFactory();
-      
+    
   private static final class DefaultAttributeFactory extends AttributeFactory {
-
+    private final ClassValue<MethodHandle> constructors = new ClassValue<MethodHandle>() {
+      @Override
+      protected MethodHandle computeValue(Class<?> attClass) {
+        return findAttributeImplCtor(findImplClass(attClass.asSubclass(Attribute.class)));
+      }
+    };
+    
+    DefaultAttributeFactory() {}
+    
     @Override
     public AttributeImpl createAttributeInstance(
         Class<? extends Attribute> attClass) {
-      return null;
+      try {
+        return (AttributeImpl) constructors.get(attClass).invokeExact();
+      } catch (Throwable t) {
+        rethrow(t);
+        throw new AssertionError();
+      }
     }
     
+    private Class<? extends AttributeImpl> findImplClass(Class<? extends Attribute> attClass) {
+      try {
+        return Class.forName(attClass.getName() + "Impl", true, attClass.getClassLoader()).asSubclass(AttributeImpl.class);
+      } catch (ClassNotFoundException cnfe) {
+        throw new IllegalArgumentException("Cannot find implementing class for: " + attClass.getName());
+      }      
+    }
+  }
+  
+  // Hack to rethrow unknown Exceptions from {@link MethodHandle#invoke}:
+  // TODO: remove the impl in test-framework, this one is more elegant :-)
+  static void rethrow(Throwable t) {
+    AttributeFactory.<Error>rethrow0(t);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <T extends Throwable> void rethrow0(Throwable t) throws T {
+    throw (T) t;
   }
   
 }
