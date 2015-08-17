@@ -17,12 +17,21 @@ package org.apache.lucene.util;
  * limitations under the License.
  */
 
-public abstract class AttributeImpl implements Cloneable, Attribute {
-  
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+
+/**
+ * Base class for Attributes that can be added to a 
+ * {@link org.apache.lucene.util.AttributeSource}.
+ * <p>
+ * Attributes are used to add data in a dynamic, yet type-safe way to a source
+ * of usually streamed objects, e. g. a {@link org.apache.lucene.analysis.TokenStream}.
+ */
+public abstract class AttributeImpl implements Cloneable, Attribute {  
   /**
-   * Clears the values in this AttributeImpl and resets it to its default value.
-   * If this implementation implements more than one Attribute interface it
-   * clears all.
+   * Clears the values in this AttributeImpl and resets it to its 
+   * default value. If this implementation implements more than one Attribute interface
+   * it clears all.
    */
   public abstract void clear();
   
@@ -53,7 +62,7 @@ public abstract class AttributeImpl implements Cloneable, Attribute {
     });
     return buffer.toString();
   }
-
+  
   /**
    * This method is for introspection of attributes, it should simply
    * add the key/values this attribute holds to the given {@link AttributeReflector}.
@@ -78,8 +87,48 @@ public abstract class AttributeImpl implements Cloneable, Attribute {
    *
    * @see #reflectAsString(boolean)
    */
-  public void reflectWith(AttributeReflector attributeReflector) {
+  public void reflectWith(AttributeReflector reflector) {
     final Class<? extends AttributeImpl> clazz = this.getClass();
+    final Class<? extends Attribute>[] interfaces = AttributeSource.getAttributeInterfaces(clazz);
+    if (interfaces.length != 1) {
+      throw new UnsupportedOperationException(clazz.getName() +
+        " implements more than one Attribute interface, the default reflectWith() implementation cannot handle this.");
+    }
+    final Class<? extends Attribute> interf = interfaces[0];
+    final Field[] fields = clazz.getDeclaredFields();
+    try {
+      for (int i = 0; i < fields.length; i++) {
+        final Field f = fields[i];
+        if (Modifier.isStatic(f.getModifiers())) continue;
+        f.setAccessible(true);
+        reflector.reflect(interf, f.getName(), f.get(this));
+      }
+    } catch (IllegalAccessException e) {
+      // this should never happen, because we're just accessing fields
+      // from 'this'
+      throw new RuntimeException(e);
+    }
   }
   
+  /**
+   * Copies the values from this Attribute into the passed-in
+   * target attribute. The target implementation must support all the
+   * Attributes this implementation supports.
+   */
+  public abstract void copyTo(AttributeImpl target);
+
+  /**
+   * In most cases the clone is, and should be, deep in order to be able to
+   * properly capture the state of all attributes.
+   */
+  @Override
+  public AttributeImpl clone() {
+    AttributeImpl clone = null;
+    try {
+      clone = (AttributeImpl)super.clone();
+    } catch (CloneNotSupportedException e) {
+      throw new RuntimeException(e);  // shouldn't happen
+    }
+    return clone;
+  }
 }
